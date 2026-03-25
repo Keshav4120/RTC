@@ -1,3 +1,4 @@
+import { sendWelcomeEmail } from "../emails/emailHanglers.js";
 import { generateToken } from "../lib/utils.js"
 import User from "../model/User.js"
 import bcrypt from "bcryptjs"
@@ -47,6 +48,11 @@ export const signup = async (req, res) => {
             email: newUser.email,
             profilePic: newUser.profilePic,
         });
+        try {
+            await sendWelcomeEmail(savedUser.email , savedUser.fullName , process.env.CLIENT_URL);
+        } catch (error) {
+            console.log("failed to send welcome email:",error);
+        }
 
     } catch (error) {
         console.log("Error in signup controller:", error);
