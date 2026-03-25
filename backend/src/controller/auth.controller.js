@@ -2,60 +2,65 @@ import { sendWelcomeEmail } from "../emails/emailHanglers.js";
 import { generateToken } from "../lib/utils.js"
 import User from "../model/User.js"
 import bcrypt from "bcryptjs"
+import "dotenv/config"
 export const signup = async (req, res) => {
-    const { fullName, email, password } = req.body;
-    const name = typeof fullName === "string" ? fullName.trim() : "";
-    const normalizedEmail = typeof email === "string" ? email.trim() : "";
-    const pass = typeof password === "string" ? password : "";
-    try {
-        // Validation
-        if (!name || !normalizedEmail || !pass) {
-            return res.status(400).json({ message: "All fields are required" });
-        }
+  const { fullName, email, password } = req.body;
 
-        if (pass.length < 6) {
-            return res.status(400).json({ message: "Password must be at least 6 characters" });
-        }
-
-        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-        if (!emailRegex.test(normalizedEmail)) {
-            return res.status(400).json({ message: "Invalid Email" });
-        }
-
-        // Check existing user
-        const user = await User.findOne({ email: normalizedEmail });
-        if (user) {
-            return res.status(400).json({ message: "Email already exists" });
-        }
-        const salt = await bcrypt.genSalt(10);
-        const hashedPassword = await bcrypt.hash(pass, salt);
-
-        // Create user
-        const newUser = new User({
-            fullName: name,
-            email: normalizedEmail,
-            password: hashedPassword,
-        });
-
-        await newUser.save();
-
-        // Generate token AFTER save
-        generateToken(newUser._id, res);
-
-        res.status(201).json({
-            _id: newUser._id,
-            fullName: newUser.fullName,
-            email: newUser.email,
-            profilePic: newUser.profilePic,
-        });
-        try {
-            await sendWelcomeEmail(savedUser.email , savedUser.fullName , process.env.CLIENT_URL);
-        } catch (error) {
-            console.log("failed to send welcome email:",error);
-        }
-
-    } catch (error) {
-        console.log("Error in signup controller:", error);
-        return res.status(500).json({ message: "Internal Server Error" });
+  try {
+    if (!fullName || !email || !password) {
+      return res.status(400).json({ message: "All fields are required" });
     }
+
+    if (password.length < 6) {
+      return res.status(400).json({ message: "Password must be at least 6 characters" });
+    }
+
+    // check if emailis valid: regex
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      return res.status(400).json({ message: "Invalid email format" });
+    }
+
+    const user = await User.findOne({ email });
+    if (user) return res.status(400).json({ message: "Email already exists" });
+
+    // 123456 => $dnjasdkasj_?dmsakmk
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(password, salt);
+
+    const newUser = new User({
+      fullName,
+      email,
+      password: hashedPassword,
+    });
+
+    if (newUser) {
+      // before CR:
+      // generateToken(newUser._id, res);
+      // await newUser.save();
+
+      // after CR:
+      // Persist user first, then issue auth cookie
+      const savedUser = await newUser.save();
+      generateToken(savedUser._id, res);
+
+      res.status(201).json({
+        _id: newUser._id,
+        fullName: newUser.fullName,
+        email: newUser.email,
+        profilePic: newUser.profilePic,
+      });
+
+      try {
+        await sendWelcomeEmail(savedUser.email, savedUser.fullName, process.env.CLIENT_URL);
+      } catch (error) {
+        console.error("Failed to send welcome email:", error);
+      }
+    } else {
+      res.status(400).json({ message: "Invalid user data" });
+    }
+  } catch (error) {
+    console.log("Error in signup controller:", error);
+    res.status(500).json({ message: "Internal server error" });
+  }
 };
